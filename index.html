@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>전개도 접기 놀이 · 입체도형 만들기</title>
+<style>
+  :root {
+    --bg: #fdf7ff;
+    --ink: #2b2140;
+    --accent: #c43ad6;
+    --accent-2: #ff8ab8;
+    --card: #ffffff;
+    --muted: #7a6d8f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 18px 20px 8px;
+    text-align: center;
+  }
+  header h1 { margin: 0; font-size: 1.6rem; letter-spacing: -0.02em; }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 0.95rem; }
+  .shapes {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+    padding: 10px 16px;
+  }
+  .shapes button {
+    border: 2px solid #ecd6f2; background: var(--card); color: var(--ink);
+    padding: 8px 14px; border-radius: 999px; font-size: 0.95rem; cursor: pointer;
+    font-family: inherit; transition: all .15s;
+  }
+  .shapes button:hover { border-color: var(--accent-2); }
+  .shapes button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  main { flex: 1; position: relative; min-height: 260px; }
+  #view { position: absolute; inset: 0; }
+  .info {
+    position: absolute; top: 12px; left: 12px;
+    background: rgba(255,255,255,.9); border-radius: 14px; padding: 10px 14px;
+    box-shadow: 0 4px 16px rgba(80, 30, 100, .08); font-size: .9rem;
+  }
+  .info b { font-size: 1.05rem; }
+  .info .counts { display: flex; gap: 12px; margin-top: 6px; color: var(--muted); }
+  .info .counts span strong { color: var(--ink); }
+  .legend { display: flex; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f0e4f4; }
+  .legend label { display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: .85rem; }
+  .legend input { margin: 0; accent-color: var(--accent); }
+  .sw { display: inline-block; }
+  .sw.v { width: 10px; height: 10px; border-radius: 50%; background: #ff3b5c; }
+  .sw.e { width: 16px; height: 4px; border-radius: 2px; background: #3a2a5c; }
+  .sw.f { width: 14px; height: 12px; border-radius: 3px; background: #e08ae9; opacity: .75; }
+  .hint { position: absolute; bottom: 10px; right: 14px; color: var(--muted); font-size: .8rem; }
+  .controls {
+    display: flex; align-items: center; gap: 14px; justify-content: center;
+    padding: 14px 20px 22px; flex-wrap: wrap;
+  }
+  .pull {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff; border: none; border-radius: 16px; padding: 14px 26px;
+    font-size: 1.1rem; font-weight: 700; cursor: pointer; font-family: inherit;
+    box-shadow: 0 6px 18px rgba(196, 58, 214, .3);
+  }
+  .pull:active { transform: scale(.97); }
+  .slider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .9rem; }
+  .slider input { width: min(320px, 60vw); accent-color: var(--accent); }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+  <header>
+    <h1>🧵 전개도 접기 놀이</h1>
+    <p>실을 당기면 납작한 전개도가 입체도형으로 변신해요!</p>
+  </header>
+
+  <div class="shapes" id="shapes"></div>
+
+  <main>
+    <div id="view"></div>
+    <div class="info">
+      <b id="shapeName"></b>
+      <div class="counts" id="counts"></div>
+      <div class="legend">
+        <label><input type="checkbox" data-kind="vertex" checked /><i class="sw v"></i>꼭짓점</label>
+        <label><input type="checkbox" data-kind="edge" checked /><i class="sw e"></i>모서리</label>
+        <label><input type="checkbox" data-kind="face" checked /><i class="sw f"></i>면</label>
+      </div>
+    </div>
+    <div class="hint">드래그해서 돌려보기 · 휠로 확대</div>
+  </main>
+
+  <div class="controls">
+    <button class="pull" id="pullBtn">🧵 실 당기기</button>
+    <label class="slider">펼침
+      <input type="range" id="fold" min="0" max="100" value="0" />
+      접힘
+    </label>
+  </div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+// ---------- 기본 장면 ----------
+const view = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+view.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
+camera.position.set(6, 9, 11);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd9c6e6, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(5, 10, 7);
+scene.add(sun);
+
+const paper = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshStandardMaterial({ color: 0xf6eefa })
+);
+paper.rotation.x = -Math.PI / 2;
+paper.position.y = -0.06;
+scene.add(paper);
+const grid = new THREE.GridHelper(40, 40, 0xe6d3ee, 0xeee0f3);
+grid.position.y = -0.04;
+scene.add(grid);
+
+// 원래 색보다 한 톤 연한 면 색
+const COLORS = [0xe08ae9, 0xffa8c9, 0xae95f9, 0x86d6e6, 0xffd77a, 0x8fdfae];
+const mat = (i) => {
+  const m = new THREE.MeshStandardMaterial({
+    color: COLORS[i % COLORS.length], side: THREE.DoubleSide, roughness: 0.85,
+    transparent: true, opacity: 0.75, depthWrite: false, // 투명한 면: 뒤쪽 꼭짓점·모서리도 보임
+  });
+  return m;
+};
+const lineMat = new THREE.LineBasicMaterial({ color: 0x3a2a5c });
+
+// 모서리(진한 굵은 선)와 꼭짓점(빨간 점)
+const EDGE_R = 0.035, VERT_R = 0.09;
+const edgeMat = new THREE.MeshStandardMaterial({ color: 0x3a2a5c, roughness: 0.5 });
+const vertMat = new THREE.MeshStandardMaterial({ color: 0xff3b5c, roughness: 0.35, emissive: 0x551020 });
+const edgeGeo = new THREE.CylinderGeometry(EDGE_R, EDGE_R, 1, 10);
+const vertGeo = new THREE.SphereGeometry(VERT_R, 20, 14);
+const UP = new THREE.Vector3(0, 1, 0);
+function edgeTube(a, b) {
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const m = new THREE.Mesh(edgeGeo, edgeMat);
+  m.scale.y = dir.length();
+  m.position.copy(a).addScaledVector(dir, 0.5);
+  m.quaternion.setFromUnitVectors(UP, dir.normalize());
+  m.userData.kind = "edge";
+  return m;
+}
+function vertexBall(p) {
+  const m = new THREE.Mesh(vertGeo, vertMat);
+  m.position.copy(p);
+  m.userData.kind = "vertex";
+  return m;
+}
+const tagFace = (m) => { m.userData.kind = "face"; return m; };
+
+// ---------- 다면체: 경첩(hinge) 트리로 접기 ----------
+// face = { poly: [[x,y],...] (경첩 좌표계: 경첩 모서리는 (0,0)->(len,0), 면은 y<=0 쪽),
+//          children: [{ edge: [i,j], angle, face }] }
+function buildPolyNet(root) {
+  const group = new THREE.Group();
+  group.rotation.x = -Math.PI / 2; // 로컬 +z 가 위쪽
+  const hinges = [];
+  let colorIdx = 0;
+
+  function addFace(parent, face) {
+    const shape = new THREE.Shape(face.poly.map(([x, y]) => new THREE.Vector2(x, y)));
+    const geo = new THREE.ShapeGeometry(shape);
+    parent.add(tagFace(new THREE.Mesh(geo, mat(colorIdx++))));
+    const pts = face.poly.map(([x, y]) => new THREE.Vector3(x, y, 0));
+    pts.forEach((p, i) => {
+      parent.add(edgeTube(p, pts[(i + 1) % pts.length]));
+      parent.add(vertexBall(p));
+    });
+
+    for (const c of face.children || []) {
+      const A = face.poly[c.edge[0]], B = face.poly[c.edge[1]];
+      const outer = new THREE.Group();
+      outer.position.set(A[0], A[1], 0);
+      outer.rotation.z = Math.atan2(B[1] - A[1], B[0] - A[0]);
+      const inner = new THREE.Group();
+      outer.add(inner);
+      parent.add(outer);
+      hinges.push({ g: inner, angle: c.angle });
+      addFace(inner, c.face);
+    }
+  }
+  addFace(group, root);
+
+  return {
+    object: group,
+    update(t) { for (const h of hinges) h.g.rotation.x = -h.angle * t; },
+  };
+}
+
+const rect = (w, h) => [[0, 0], [0, -h], [w, -h], [w, 0]];
+const tri = (w, h) => [[0, 0], [w / 2, -h], [w, 0]];
+const sq = (s) => [[-s / 2, -s / 2], [s / 2, -s / 2], [s / 2, s / 2], [-s / 2, s / 2]];
+const D90 = Math.PI / 2;
+
+function cube() {
+  const s = 2;
+  const side = (extra) => ({ poly: rect(s, s), children: extra || [] });
+  return buildPolyNet({
+    poly: sq(s),
+    children: [
+      { edge: [0, 1], angle: D90, face: side() },
+      { edge: [1, 2], angle: D90, face: side([{ edge: [1, 2], angle: D90, face: { poly: rect(s, s) } }]) },
+      { edge: [2, 3], angle: D90, face: side() },
+      { edge: [3, 0], angle: D90, face: side() },
+    ],
+  });
+}
+
+function triPrism() {
+  const w = 2, L = 3.2, h = w * Math.sqrt(3) / 2;
+  const fold120 = Math.PI * 2 / 3;
+  return buildPolyNet({
+    poly: [[-w / 2, -L / 2], [w / 2, -L / 2], [w / 2, L / 2], [-w / 2, L / 2]],
+    children: [
+      { edge: [1, 2], angle: fold120, face: { poly: rect(L, w) } },
+      { edge: [3, 0], angle: fold120, face: { poly: rect(L, w) } },
+      { edge: [0, 1], angle: D90, face: { poly: tri(w, h) } },
+      { edge: [2, 3], angle: D90, face: { poly: tri(w, h) } },
+    ],
+  });
+}
+
+function sqPyramid() {
+  const a = 2, ht = 2.2; // 옆면 삼각형 높이
+  const fold = Math.PI - Math.acos((a / 2) / ht);
+  const face = () => ({ poly: tri(a, ht) });
+  return buildPolyNet({
+    poly: sq(a),
+    children: [0, 1, 2, 3].map((i) => ({ edge: [i, (i + 1) % 4], angle: fold, face: face() })),
+  });
+}
+
+function tetra() {
+  const a = 2.4, h = a * Math.sqrt(3) / 2;
+  const fold = Math.PI - Math.acos(1 / 3);
+  const base = [[-a / 2, -h / 3], [a / 2, -h / 3], [0, (2 * h) / 3]];
+  return buildPolyNet({
+    poly: base,
+    children: [0, 1, 2].map((i) => ({ edge: [i, (i + 1) % 3], angle: fold, face: { poly: tri(a, h) } })),
+  });
+}
+
+// ---------- 곡면: 원기둥 / 원뿔 ----------
+function circleMesh(r, offsetZ, colorI) {
+  const geo = new THREE.CircleGeometry(r, 64);
+  geo.rotateX(-Math.PI / 2);          // xz 평면에 눕히기
+  geo.translate(0, 0, offsetZ);
+  const m = tagFace(new THREE.Mesh(geo, mat(colorI)));
+  // 원의 둘레 = 입체도형의 모서리(테두리)
+  const ringGeo = new THREE.TorusGeometry(r, EDGE_R, 8, 96);
+  ringGeo.rotateX(-Math.PI / 2);
+  ringGeo.translate(0, 0, offsetZ);
+  const ring = new THREE.Mesh(ringGeo, edgeMat);
+  ring.userData.kind = "edge";
+  const g = new THREE.Group();
+  g.add(m, ring);
+  return g;
+}
+
+function cylinder() {
+  const r = 0.9, H = 3, W = 2 * Math.PI * r;
+  const group = new THREE.Group();
+  const geo = new THREE.PlaneGeometry(W, H, 64, 1);
+  const base = geo.attributes.position.array.slice(); // (x, y, 0)
+  const side = tagFace(new THREE.Mesh(geo, mat(0)));
+  group.add(side);
+
+  const top = circleMesh(r, -r, 1);
+  const topHinge = new THREE.Group(); topHinge.position.set(0, 0, -H / 2); topHinge.add(top);
+  const bot = circleMesh(r, r, 3);
+  const botHinge = new THREE.Group(); botHinge.position.set(0, 0, H / 2); botHinge.add(bot);
+  group.add(topHinge, botHinge);
+
+  return {
+    object: group,
+    update(t) {
+      const p = geo.attributes.position.array;
+      const R = t > 0.001 ? r / t : Infinity;
+      for (let i = 0; i < p.length; i += 3) {
+        const s = base[i], z = -base[i + 1];
+        if (R === Infinity) { p[i] = s; p[i + 1] = 0; }
+        else { p[i] = R * Math.sin(s / R); p[i + 1] = R * (1 - Math.cos(s / R)); }
+        p[i + 2] = z;
+      }
+      geo.attributes.position.needsUpdate = true;
+      geo.computeVertexNormals();
+      topHinge.rotation.x = D90 * t;
+      botHinge.rotation.x = -D90 * t;
+    },
+  };
+}
+
+function cone() {
+  const r = 1, L = 3.2;
+  const alpha = (2 * Math.PI * r) / L;          // 부채꼴 중심각
+  const psiF = Math.asin(r / L);
+  const NR = 24, NA = 64;
+  const group = new THREE.Group();
+
+  const pos = new Float32Array((NR + 1) * (NA + 1) * 3);
+  const idx = [];
+  for (let i = 0; i < NR; i++) for (let j = 0; j < NA; j++) {
+    const a = i * (NA + 1) + j, b = a + 1, c = a + NA + 1, d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  group.add(tagFace(new THREE.Mesh(geo, mat(2))));
+  group.add(vertexBall(new THREE.Vector3(0, 0, 0))); // 원뿔의 꼭짓점
+
+  const baseHinge = new THREE.Group();
+  baseHinge.position.set(0, 0, L);
+  baseHinge.add(circleMesh(r, r, 4));
+  group.add(baseHinge);
+  group.position.z = -L / 2;
+
+  return {
+    object: group,
+    update(t) {
+      const beta = 2 * Math.PI + (alpha - 2 * Math.PI) * t;
+      const sp = Math.min(1, beta / (2 * Math.PI)), cp = Math.sqrt(1 - sp * sp);
+      // a=(0,sp,cp), e1=(0,-cp,sp), e2=(1,0,0)
+      let k = 0;
+      for (let i = 0; i <= NR; i++) {
+        const rho = (i / NR) * L;
+        for (let j = 0; j <= NA; j++) {
+          const phi = -alpha / 2 + (j / NA) * alpha;
+          const th = (phi * 2 * Math.PI) / beta;
+          const c = Math.cos(th), s = Math.sin(th);
+          pos[k++] = rho * sp * s;
+          pos[k++] = rho * (cp * sp - sp * cp * c);
+          pos[k++] = rho * (cp * cp + sp * sp * c);
+        }
+      }
+      geo.attributes.position.needsUpdate = true;
+      geo.computeVertexNormals();
+      baseHinge.rotation.x = -(D90 + psiF) * t;
+    },
+  };
+}
+
+// ---------- 도형 목록 ----------
+const SHAPES = [
+  { key: "cube", name: "정육면체", make: cube, counts: [6, 8, 12] },
+  { key: "cylinder", name: "원기둥", make: cylinder, counts: [3, 0, 2, "곡면 1개 · 원 2개"] },
+  { key: "cone", name: "원뿔", make: cone, counts: [2, 1, 1, "곡면 1개 · 원 1개 · 꼭짓점 1개"] },
+  { key: "triPrism", name: "삼각기둥", make: triPrism, counts: [5, 6, 9] },
+  { key: "sqPyramid", name: "사각뿔", make: sqPyramid, counts: [5, 5, 8] },
+  { key: "tetra", name: "정사면체", make: tetra, counts: [4, 4, 6] },
+];
+
+let current = null;
+let t = 0, target = 0;
+const slider = document.getElementById("fold");
+const pullBtn = document.getElementById("pullBtn");
+
+function select(shape) {
+  if (current) scene.remove(current.object);
+  current = shape.make();
+  scene.add(current.object);
+  t = target = anim = 0;
+  slider.value = 0;
+  current.update(0);
+  applyVisibility();
+  document.getElementById("shapeName").textContent = shape.name;
+  const [f, v, e, note] = shape.counts;
+  document.getElementById("counts").innerHTML = note
+    ? `<span>${note}</span>`
+    : `<span>면 <strong>${f}</strong></span><span>꼭짓점 <strong>${v}</strong></span><span>모서리 <strong>${e}</strong></span>`;
+  document.querySelectorAll(".shapes button").forEach((b) => b.classList.toggle("active", b.dataset.key === shape.key));
+  updateBtn();
+}
+
+const shapesEl = document.getElementById("shapes");
+for (const s of SHAPES) {
+  const b = document.createElement("button");
+  b.textContent = s.name; b.dataset.key = s.key;
+  b.onclick = () => select(s);
+  shapesEl.appendChild(b);
+}
+
+// 꼭짓점 / 모서리 / 면 보이기 토글
+const toggles = [...document.querySelectorAll(".legend input")];
+function applyVisibility() {
+  const show = Object.fromEntries(toggles.map((c) => [c.dataset.kind, c.checked]));
+  current.object.traverse((o) => { if (o.userData.kind) o.visible = show[o.userData.kind]; });
+}
+toggles.forEach((c) => (c.onchange = applyVisibility));
+
+function updateBtn() { pullBtn.textContent = target >= 1 ? "✋ 다시 펼치기" : "🧵 실 당기기"; }
+pullBtn.onclick = () => { target = target >= 1 ? 0 : 1; updateBtn(); };
+slider.oninput = () => { target = t = slider.value / 100; current.update(t); updateBtn(); };
+
+// ---------- 렌더 루프 ----------
+const box = new THREE.Box3(), center = new THREE.Vector3();
+function resize() {
+  const { clientWidth: w, clientHeight: h } = view;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+const ease = (x) => x * x * (3 - 2 * x);
+let anim = 0; // 0..1 linear progress for easing
+renderer.setAnimationLoop(() => {
+  if (Math.abs(target - anim) > 1e-4) {
+    anim += Math.sign(target - anim) * Math.min(0.012, Math.abs(target - anim));
+    t = ease(anim);
+    if (Math.abs(target - anim) < 1e-4) t = anim = target;
+    slider.value = Math.round(t * 100);
+    current.update(t);
+  } else {
+    anim = t;
+  }
+  box.setFromObject(current.object).getCenter(center);
+  controls.target.lerp(center, 0.08);
+  controls.update();
+  renderer.render(scene, camera);
+});
+
+select(SHAPES[0]);
+</script>
+</body>
+</html>
